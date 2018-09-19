@@ -32,7 +32,7 @@ export default class Agent{
         model.add(tf.layers.dense({units: 8, activation: 'relu'}))
         model.add(tf.layers.dense({units: this.actionSize, activation: 'linear'}))
         model.compile({
-            optimizer: tf.train.rmsprop(0.001),
+            optimizer: tf.train.adam(0.001),
             loss: 'meanSquaredError',
             metrics: ['accuracy']
         })
@@ -53,16 +53,54 @@ export default class Agent{
         })
     }
 
+    async expReplayEp() {
+        for (let i = 0; i < this.memory.length; i++) {
+            let [state, action, reward, next_state, done] = this.memory[i]
+
+            state = tf.tensor(state).reshape([-1, this.stateSize])
+            next_state = tf.tensor(next_state).reshape([-1, this.stateSize])
+
+            let target = reward
+
+            if (!done) {
+                let predictNext = this.model.predict(next_state)
+                target = reward + this.gamma * predictNext.argMax().dataSync()[0]
+            }
+
+            let target_f = this.model.predict(state).dataSync()
+            target_f[action] = target
+            target_f = tf.tensor2d(target_f, [1, this.actionSize])//.reshape([1,3])
+
+            await this.model.fit(state, target_f, {
+                epochs: 1,
+                callbacks: {
+                    onEpochEnd: async (epochs, logs) => {
+                        if (i === this.memory.length - 1) {
+                            this.model_loss.push(logs.loss)
+                            this.model_accuracy.push(logs.acc)
+                        }
+                    }
+                }
+            })
+
+            state.dispose()
+            next_state.dispose()
+            target_f.dispose()
+
+            await tf.nextFrame()
+        }
+    }
+
     async expReplay(batchSize) {
 
-        let miniBatch = []
-        let l = this.memory.length
-        let range = _.range(l - batchSize + 1, l)
+        let miniBatch = _.sampleSize(this.memory, batchSize)
+        // let range = _.sampleSize(this.memory, batchSize)
+        // range.map(cur => miniBatch.push(cur))
         
 
-        for (let i = 0; i < range.length; i++) {
-            miniBatch.push(this.memory[i])
-        }
+        // for (let i = 0; i < range.length; i++) {
+        //     miniBatch.push(this.memory[i])
+        // }
                 
 
         for (let j = 0; j < miniBatch.length; j++) {
@@ -74,32 +112,22 @@ export default class Agent{
 
             if (!done) {
                 let predictNext = this.model.predict(next_state)
-                // let y = predictNext.argMax().dataSync()[0]
                 target = reward + this.gamma * predictNext.argMax().dataSync()[0]
             }
 
             let target_f = this.model.predict(state).dataSync()
             target_f[action] = target
             target_f = tf.tensor2d(target_f, [1, this.actionSize])//.reshape([1,3])
-            const h = await this.model.fit(state, target_f, {
+            
+            await this.model.fit(state, target_f, {
                 epochs: 1,
                 callbacks: {
                     onEpochEnd: async (epochs, logs) => {
-                        if(j == miniBatch.length - 1) {
-                            console.log('EpochEnd:', logs.loss, logs.acc)
-                            this.model_loss.push(logs.loss)
-                            this.model_accuracy.push(logs.acc)
-                        }
-                        // console.log('EpochEnd:', logs.loss, logs.acc)
-                        // this.model_loss.push(logs.loss)
-                        // this.model_accuracy.push(logs.acc)
+                        this.model_loss.push(logs.loss)
+                        this.model_accuracy.push(logs.acc)
                     }
                 }
             })
-            
-            // console.log(h.history.loss[0], h.history.acc)
-            // this.model_loss.push(h.history.loss[0])
-            // this.model_accuracy.push(h.history.accuracy[0])
             
             state.dispose()
             next_state.dispose()
@@ -114,4 +142,3 @@ export default class Agent{
 
     }
 }
-
