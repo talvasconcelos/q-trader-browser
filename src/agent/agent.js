@@ -13,7 +13,7 @@ export default class Agent{
         this.gamma = 0.95
         this.epsilon = 1.0
         this.epsilonMin = 0.01
-        this.epsilonDecay = 0.995
+        this.epsilonDecay = 0.9
 
         this.model_loss = []
         this.model_accuracy = []
@@ -24,18 +24,22 @@ export default class Agent{
     _model() {
         const model = tf.sequential()
         model.add(tf.layers.dense({
-            units: 64,
-            inputDim:  this.stateSize,
-            activation: 'relu'
+            units: 32,
+            inputShape: [this.stateSize],
+            //inputDim:  this.stateSize,
+            activation: 'elu'
         }))
-        model.add(tf.layers.dense({units: 32, activation: 'relu'}))
-        model.add(tf.layers.dense({units: 8, activation: 'relu'}))
-        model.add(tf.layers.dense({units: this.actionSize, activation: 'linear'}))
+        model.add(tf.layers.leakyReLU())
+        model.add(tf.layers.dense({units: 16, activation: 'elu'}))
+        model.add(tf.layers.dense({units: 8, activation: 'elu'}))
+        model.add(tf.layers.dense({units: this.actionSize, activation: 'softmax'}))
         model.compile({
             optimizer: tf.train.adam(0.001),
             loss: 'meanSquaredError',
             metrics: ['accuracy']
         })
+
+        model.summary()
 
         return model
     }
@@ -45,100 +49,77 @@ export default class Agent{
             if(!this.eval && Math.random() <= this.epsilon){
                 return _.random(this.actionSize)
             }
-    
-            state = tf.tensor(state).reshape([-1, this.stateSize])
-            let options = this.model.predict(state).dataSync()
-            // console.log(tf.argMax(options).dataSync()[0])
+
+            let _state = tf.tensor(state).reshape([-1, this.stateSize])
+            let options = this.model.predict(_state)
+            //options.print()
             return tf.argMax(options).dataSync()[0]
         })
     }
 
-    async expReplayEp() {
-        for (let i = 0; i < this.memory.length; i++) {
-            let [state, action, reward, next_state, done] = this.memory[i]
-
-            state = tf.tensor(state).reshape([-1, this.stateSize])
-            next_state = tf.tensor(next_state).reshape([-1, this.stateSize])
-
-            let target = reward
-
-            if (!done) {
-                let predictNext = this.model.predict(next_state)
-                target = reward + this.gamma * predictNext.argMax().dataSync()[0]
-            }
-
-            let target_f = this.model.predict(state).dataSync()
-            target_f[action] = target
-            target_f = tf.tensor2d(target_f, [1, this.actionSize])//.reshape([1,3])
-
-            await this.model.fit(state, target_f, {
-                epochs: 1,
-                callbacks: {
-                    onEpochEnd: async (epochs, logs) => {
-                        if (i === this.memory.length - 1) {
-                            this.model_loss.push(logs.loss)
-                            this.model_accuracy.push(logs.acc)
-                        }
-                    }
-                }
-            })
-
-            state.dispose()
-            next_state.dispose()
-            target_f.dispose()
-
-            await tf.nextFrame()
-        }
-    }
-
     async expReplay(batchSize) {
 
-        let miniBatch = _.sampleSize(this.memory, batchSize)
-        // let range = _.sampleSize(this.memory, batchSize)
-        // range.map(cur => miniBatch.push(cur))
-        
-
-        // for (let i = 0; i < range.length; i++) {
-        //     miniBatch.push(this.memory[i])
-        // }
+        let X = []
+        let Y = []
                 
-
-        for (let j = 0; j < miniBatch.length; j++) {
-            let [state, action, reward, next_state, done] = miniBatch[j]
-            state = tf.tensor(state).reshape([-1, this.stateSize])
-            next_state = tf.tensor(next_state).reshape([-1, this.stateSize])
-
+        await this.memory.map(mem => {
+            
+            let [state, action, reward, next_state, done] = mem
             let target = reward
+            
+            let _state = tf.tensor(state).reshape([-1, this.stateSize])
+            let _next_state = tf.tensor(next_state).reshape([-1, this.stateSize])
 
             if (!done) {
-                let predictNext = this.model.predict(next_state)
+                let predictNext = this.model.predict(_next_state)
                 target = reward + this.gamma * predictNext.argMax().dataSync()[0]
+                //console.log(predictNext.dataSync())
             }
 
-            let target_f = this.model.predict(state).dataSync()
+            let target_f = this.model.predict(_state).dataSync()
             target_f[action] = target
-            target_f = tf.tensor2d(target_f, [1, this.actionSize])//.reshape([1,3])
-            
-            await this.model.fit(state, target_f, {
-                epochs: 1,
-                callbacks: {
-                    onEpochEnd: async (epochs, logs) => {
-                        this.model_loss.push(logs.loss)
-                        this.model_accuracy.push(logs.acc)
-                    }
-                }
-            })
-            
-            state.dispose()
-            next_state.dispose()
-            target_f.dispose()
 
-            await tf.nextFrame()
-        }
+            _state.dispose()
+            _next_state.dispose()
+
+            X.push(state)
+            Y.push(Array.from(target_f))
+
+            return true
+        })
+        //console.log(X.slice(0, 11))
+        X = tf.tensor(X).reshape([-1, this.stateSize])
+        Y = tf.tensor2d(Y)
+        
+        // X.print()
+        // this.model.predict(X).print()
+
+        await this.model.fit(X, Y, {
+            epochs: 1,
+            batchSize,
+            validationSplit: 0.3,
+            shuffle: true,
+            callbacks: {
+                onBatchEnd: async (batch, logs) => {
+                    console.log(`Batch: ${batch} | Loss: ${logs.loss} | Acc: Loss: ${logs.acc}`)
+                    await tf.nextFrame()
+                },
+                onEpochEnd: async (epoch, logs) => {
+                    this.model_loss.push(logs.val_loss)
+                    this.model_accuracy.push(logs.val_acc)
+                    console.log(`${logs.val_loss} ${logs.val_acc}`)
+                    await tf.nextFrame()
+                }
+            }
+        })
+        
 
         if (this.epsilon > this.epsilonMin) {
             this.epsilon *= this.epsilonDecay
         }
+
+        X.dispose()
+        Y.dispose()
 
     }
 }

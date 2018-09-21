@@ -1,8 +1,10 @@
-import { rawData } from './data/dataset'
+import train  from './data/datasets/BTCUSDT_4h.json'
+import test from './data/datasets/ETCBTC_4h.json'
 import * as _ from 'lodash'
 
-export const getData = () => {
-    return rawData.map(cur => +cur.close)
+export const getData = (pair) => {
+    const rawData = pair === 'train' ? train : test
+    return rawData.map(cur => +cur.close).filter(v => v)
 }
 
 export const sigmoid = (x) => (1 / (1 + Math.exp(-x)))
@@ -22,6 +24,9 @@ export const getState = (data, t, n) => {
     for (let i = 0; i < n - 1; i++) {
         res.push(sigmoid(block[i + 1] - block[i]))
     }
-    console.log(res)
     return res
+}
+
+export const percent = (x, y) => {
+    return Math.ceil((x * 100) / y)
 }
