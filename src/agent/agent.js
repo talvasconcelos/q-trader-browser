@@ -13,7 +13,7 @@ export default class Agent{
         this.gamma = 0.95
         this.epsilon = 1.0
         this.epsilonMin = 0.01
-        this.epsilonDecay = 0.9
+        this.epsilonDecay = 0.95
 
         this.model_loss = []
         this.model_accuracy = []
@@ -55,6 +55,10 @@ export default class Agent{
             //options.print()
             return tf.argMax(options).dataSync()[0]
         })
+    }
+
+    async updateFrame() {
+        return await tf.nextFrame()
     }
 
     async expReplay(batchSize) {
