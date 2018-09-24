@@ -2,7 +2,7 @@ import * as tf from "@tensorflow/tfjs"
 const _ = require('lodash')
 
 export default class Agent{
-    constructor(stateSize, is_eval = false, modelName = '') {
+    constructor(stateSize = 5, is_eval = false, modelName = '') {
         this.stateSize = stateSize
         this.actionSize = 3
         this.memory = []
@@ -17,9 +17,23 @@ export default class Agent{
 
         this.model_loss = []
         this.model_accuracy = []
+        this.models_info = null
 
-        this.model = is_eval ? tf.loadModel('models/' + modelName) : this._model()
+        this.model = /*is_eval ? tf.loadModel(`indexeddb://modelBH`) :*/ this._model()
     }
+
+    async modelsInfo() {
+        this.models_info = await tf.io.listModels()
+    }
+
+    get modelLayers() {
+        console.log(this.model)
+        //return this.model.layers[0].input.shape[1]
+    }
+
+    loadModel(model) {
+        this.model = tf.loadModel(model)
+    } 
 
     _model() {
         const model = tf.sequential()
