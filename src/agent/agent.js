@@ -1,8 +1,8 @@
 import * as tf from "@tensorflow/tfjs"
 const _ = require('lodash')
 
-export default class Agent{
-    constructor(stateSize = 5, is_eval = false, modelName = '') {
+export default class Agent {
+    constructor(stateSize, is_eval = false, modelName = '') {
         this.stateSize = stateSize
         this.actionSize = 3
         this.memory = []
@@ -17,23 +17,30 @@ export default class Agent{
 
         this.model_loss = []
         this.model_accuracy = []
-        this.models_info = null
 
-        this.model = /*is_eval ? tf.loadModel(`indexeddb://modelBH`) :*/ this._model()
+        this.model = is_eval ? this.loadModel(modelName) : this._model()
     }
 
-    async modelsInfo() {
-        this.models_info = await tf.io.listModels()
+    async loadModel(name) {
+        name = `indexeddb://${name}`
+        const list = await tf.io.listModels()
+        if(name in list){
+            console.log(`Loading existing model...`)
+            const model = await tf.loadModel(name)
+            console.log(`Model loaded...`)
+            this.stateSize = model.layers[0].input.shape[1]
+            this.model = model
+        } else {
+            throw new Error(`Cannot find model at ${name}.`)
+        }
     }
 
-    get modelLayers() {
-        console.log(this.model)
-        //return this.model.layers[0].input.shape[1]
+    async listModels() {
+        const list = await tf.io.listModels()
+        return Object.keys(list)
     }
 
-    loadModel(model) {
-        this.model = tf.loadModel(model)
-    } 
+
 
     _model() {
         const model = tf.sequential()
@@ -41,32 +48,41 @@ export default class Agent{
             units: 32,
             inputShape: [this.stateSize],
             //inputDim:  this.stateSize,
-            activation: 'elu'
+            activation: 'relu'
+        }))
+        model.add(tf.layers.dense({
+            units: 16,
+            activation: 'relu'
+        }))
+        model.add(tf.layers.dense({
+            units: 8,
+            activation: 'relu'
         }))
         model.add(tf.layers.leakyReLU())
-        model.add(tf.layers.dense({units: 16, activation: 'elu'}))
-        model.add(tf.layers.dense({units: 8, activation: 'elu'}))
-        model.add(tf.layers.dense({units: this.actionSize, activation: 'softmax'}))
+        model.add(tf.layers.dense({
+            units: this.actionSize,
+            activation: 'sigmoid'
+        }))
         model.compile({
             optimizer: tf.train.adam(0.001),
             loss: 'meanSquaredError',
             metrics: ['accuracy']
         })
 
-        model.summary()
+        //model.summary()
 
         return model
     }
 
     action(state) {
         return tf.tidy(() => {
-            if(!this.eval && Math.random() <= this.epsilon){
+            if (!this.eval && Math.random() <= this.epsilon) {
                 return _.random(this.actionSize)
             }
 
             let _state = tf.tensor(state).reshape([-1, this.stateSize])
             let options = this.model.predict(_state)
-            //options.print()
+            options.print()
             return tf.argMax(options).dataSync()[0]
         })
     }
@@ -79,18 +95,18 @@ export default class Agent{
 
         let X = []
         let Y = []
-                
+
         await this.memory.map(mem => {
-            
+
             let [state, action, reward, next_state, done] = mem
             let target = reward
-            
+
             let _state = tf.tensor(state).reshape([-1, this.stateSize])
             let _next_state = tf.tensor(next_state).reshape([-1, this.stateSize])
 
             if (!done) {
                 let predictNext = this.model.predict(_next_state)
-                target = reward + this.gamma * predictNext.argMax().dataSync()[0]
+                target = reward + (this.gamma * predictNext.argMax().dataSync()[0])
                 //console.log(predictNext.dataSync())
             }
 
@@ -108,7 +124,7 @@ export default class Agent{
         //console.log(X.slice(0, 11))
         X = tf.tensor(X).reshape([-1, this.stateSize])
         Y = tf.tensor2d(Y)
-        
+
         // X.print()
         // this.model.predict(X).print()
 
@@ -130,7 +146,7 @@ export default class Agent{
                 }
             }
         })
-        
+
 
         if (this.epsilon > this.epsilonMin) {
             this.epsilon *= this.epsilonDecay

@@ -17,10 +17,8 @@ class App extends Component {
         <div className="container">
           <div className="columns">
             <div className="column col-12">
-              <Train window='6' episodes='10' />
-            </div>
-            <div className="column col-12">
-              <Evaluate />
+              <Train window='3' episode='20' />
+              <Evaluate></Evaluate>
             </div>
           </div>
         </div>        
