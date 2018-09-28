@@ -3,7 +3,7 @@ import Agent from '../agent/agent'
 import * as utils from '../utils'
 import _ from 'lodash'
 
-const MAX_MEM = 2048
+const MAX_MEM = 5000
 
 class Train extends Component{
     constructor(props) {
@@ -23,14 +23,16 @@ class Train extends Component{
             disabled: !this.state.disabled
         })
         await this.state.agent.updateFrame()
-
+        this.state.agent.clearModels()
         const {data, episode_count, window_size, agent} = this.state
-        const l = data.length - 1
-        const buy_hold = (data[l] - data[0])
-        const batch_size = 128
+        
+        const l = data.close.length - 1
+        const buy_hold = (data.close[l] - data.close[0])
+        const batch_size = 2048
                 
 
         for (let e = 0; e < episode_count + 1; e++) {
+            const start = Date.now()
             console.log('Episode ' + e + '/' + episode_count)
             let state = utils.getState(data, 0, window_size + 1)
 
@@ -41,30 +43,28 @@ class Train extends Component{
             for (let t = 0; t < l; t++) {
                 
                 const action = agent.action(state)
-
                 //sit
                 const next_state = utils.getState(data, t + 1, window_size + 1)
                 let reward = 0
 
                 //buy
                 if(action === 1 && agent.inventory.length === 0) {
-                    agent.inventory.push(data[t])
+                    agent.inventory.push(data.close[t])
                     
                 } else if(action === 2 && agent.inventory.length > 0) { //sell
                     let bought_price = agent.inventory.shift(0)
-                    let _profit = data[t] - bought_price
-                    let pct = (_profit / bought_price)
+                    let _profit = data.close[t] - bought_price
+                    //let pct = (_profit / bought_price) * 100
 
-                    reward = _profit <= 0 ? -0.5 : pct //<= 0.1 ? 0.5 : 1//_.max([_profit, 0])
+                    reward = _.max([utils.sigmoid(_profit), 0])
+                    //reward = utils.tanh(_profit)
                     total_profit += _profit
-                    reward += total_profit > buy_hold ? 1 : -1
-                    
+                    //reward += total_profit > buy_hold ? 1 : -1
                     total_trades++
-        
+                    
                     // console.log('Buy: ' + data[t])
                     // console.log('Sell: ' + data[t] + ' | Profit: ' + _profit.toFixed(2))
                 }
-
                 
                 let done = t === (l - 1)
 
@@ -73,6 +73,10 @@ class Train extends Component{
                 }
                 agent.memory.push([state, action, reward, next_state, done])
                 state = next_state
+
+                // if(e !== 0 && e % 5 === 0){
+                //     await agent.expReplay(batch_size)
+                // }
 
                 if(done) {
                     this.setState({
@@ -87,15 +91,22 @@ class Train extends Component{
                 }
 
             }
+            //await agent.expReplay(128)
 
-            await agent.expReplay(batch_size)
-
-            if(e !== 0 && e % 10 === 0) {
-                await agent.model.save(`indexeddb://modelBH-ep_${e}`)
+            if (e % 10 === 0) {
+                await agent.expReplay(batch_size)
             }
+                      
+            //await agent.expReplay(batch_size)
             
+            if(e % 20 === 0) {
+                await agent.model.save(`indexeddb://model-ep_${e}`)
+            }
+            const executionTime = Date.now() - start
+            console.log(`Episode execution took: ${executionTime}`)
+            console.log(`Estimated time to finish train: ${utils.calcTime(executionTime * (episode_count - e))}`)
         }
-        await agent.model.save('indexeddb://modelBH-4h')
+        await agent.model.save('indexeddb://model-1h')
         
         this.setState({disabled: !this.state.disabled})
         console.log('Done training!')
@@ -108,7 +119,7 @@ class Train extends Component{
     componentDidMount() {
         this.setState({
             data: utils.getData('train'),
-            agent: new Agent(this.state.window_size)
+            agent: new Agent(this.state.window_size, false, 'model-1h')
         })
     }
 

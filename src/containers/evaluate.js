@@ -8,7 +8,7 @@ class Evaluate extends Component{
     getStartInfo = async () => {
         await this.setState({
             data: utils.getData('test'),
-            agent: new Agent(null, true, `modelBH-4h`)
+            agent: new Agent(null, true, `model-1h`)
         })
         this.evaluate()
     }
@@ -18,13 +18,14 @@ class Evaluate extends Component{
         console.log(`Start evaluation`)        
         const {agent, data} = this.state
         
-        const l = data.length - 1
+        const l = data.close.length - 1
         const window_size = agent.stateSize
-        const buy_hold = (data[l] - data[0])
+        const buy_hold = (data.close[l] - data.close[0])
 
         let state = utils.getState(data, 0, window_size + 1)
 
         let total_profit = 0
+        let total_losses = 0
         let total_trades = 0
         agent.inventory = []
         
@@ -32,21 +33,24 @@ class Evaluate extends Component{
         for (let t = 0; t < l; t++) {
 
             const action = agent.action(state)
+            //console.log(action)
             const next_state = utils.getState(data, t + 1, window_size + 1)
 
             //buy
-            if (t === 0 || action === 1 && agent.inventory.length === 0) {
-                console.log('Buy: ' + data[t])
-                agent.inventory.push(data[t])
+            if (action === 1 && agent.inventory.length === 0) {
+                console.log('Buy: ' + data.close[t])
+                agent.inventory.push(data.close[t])
             
             //sell
             } else if (action === 2 && agent.inventory.length > 0) { 
                 let bought_price = agent.inventory.shift(0)
-                let _profit = data[t] - bought_price
+                let _profit = data.close[t] - bought_price
                 
-                console.log('Sell: ' + data[t] + ' | Profit: ' + _profit.toFixed(2))                
+                console.log('Sell: ' + data.close[t] + ' | Profit: ' + _profit.toFixed(2))                
                 total_profit += _profit                
-
+                if(_profit < 0) {
+                    total_losses += _profit
+                }
                 total_trades++
 
             }
@@ -57,8 +61,9 @@ class Evaluate extends Component{
             
             if (done) {
                 console.log(`--------------------------------`)
-                console.log('Total Profit:', total_profit.toFixed(2), 'Trades:', total_trades)
+                console.log('Total Profit:', total_profit.toFixed(2), 'Total Losses: ', total_losses.toFixed(2))
                 console.log('Vs Buy/Hold:', (total_profit - buy_hold).toFixed(2), buy_hold)
+                console.log('Trades: ', total_trades)
                 console.log('--------------------------------')
             }
             
