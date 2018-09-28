@@ -3,7 +3,7 @@ import Agent from '../agent/agent'
 import * as utils from '../utils'
 import _ from 'lodash'
 
-const MAX_MEM = 5000
+const MAX_MEM = 10000
 
 class Train extends Component{
     constructor(props) {
@@ -29,6 +29,7 @@ class Train extends Component{
         const l = data.close.length - 1
         const buy_hold = (data.close[l] - data.close[0])
         const batch_size = 2048
+        const times = []
                 
 
         for (let e = 0; e < episode_count + 1; e++) {
@@ -54,10 +55,10 @@ class Train extends Component{
                 } else if(action === 2 && agent.inventory.length > 0) { //sell
                     let bought_price = agent.inventory.shift(0)
                     let _profit = data.close[t] - bought_price
-                    //let pct = (_profit / bought_price) * 100
+                    let pct = (_profit / bought_price)
 
-                    reward = _.max([utils.sigmoid(_profit), 0])
-                    //reward = utils.tanh(_profit)
+                    //reward = _.max([pct, 0])
+                    reward = utils.tanh(pct)
                     total_profit += _profit
                     //reward += total_profit > buy_hold ? 1 : -1
                     total_trades++
@@ -84,8 +85,8 @@ class Train extends Component{
                         episode: this.state.episode + 1
                     })
                     console.log(`-------------Ep: ${e}------------`)
-                    console.log('Total Profit:', total_profit.toFixed(2), 'Trades:', total_trades)
-                    console.log('Vs Buy/Hold:', (total_profit - buy_hold).toFixed(2), buy_hold)
+                    console.log('Total Profit:', total_profit.toFixed(8), 'Trades:', total_trades)
+                    console.log('Vs Buy/Hold:', (total_profit - buy_hold).toFixed(8), buy_hold)
                     console.log('Loss:', _.last(agent.model_loss), 'Accuracy:', _.last(agent.model_accuracy))
                     console.log('--------------------------------')
                 }
@@ -93,7 +94,7 @@ class Train extends Component{
             }
             //await agent.expReplay(128)
 
-            if (e % 10 === 0) {
+            if (e % 5 === 0) {
                 await agent.expReplay(batch_size)
             }
                       
@@ -103,8 +104,10 @@ class Train extends Component{
                 await agent.model.save(`indexeddb://model-ep_${e}`)
             }
             const executionTime = Date.now() - start
-            console.log(`Episode execution took: ${executionTime}`)
-            console.log(`Estimated time to finish train: ${utils.calcTime(executionTime * (episode_count - e))}`)
+            times.push(executionTime)
+            const meanTime = arr => arr.reduce((c, p) => c + p, 0) / arr.length
+            console.log(`Episode execution took: ${executionTime}ms`)
+            console.log(`Estimated time to finish train: ${utils.calcTime(meanTime(times) * (episode_count - e))}`)
         }
         await agent.model.save('indexeddb://model-1h')
         
@@ -119,7 +122,7 @@ class Train extends Component{
     componentDidMount() {
         this.setState({
             data: utils.getData('train'),
-            agent: new Agent(this.state.window_size, false, 'model-1h')
+            agent: new Agent(this.state.window_size)
         })
     }
 

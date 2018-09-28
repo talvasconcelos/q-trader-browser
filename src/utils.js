@@ -76,8 +76,8 @@ export const getState = (rawData, t, n) => {
     }
     let res = []
     for (let i = 0; i < n - 1; i++) {
-        res.push(tanh(block[i + 1] - block[i]))
-        //res.push(sigmoid(block[i + 1] - block[i]))
+        //res.push(tanh(block[i + 1] - block[i]))
+        res.push(sigmoid(block[i + 1] - block[i]))
     }
     //console.log(res)
     return res

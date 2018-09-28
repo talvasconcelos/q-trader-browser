@@ -137,7 +137,7 @@ export default class Agent {
         // this.model.predict(X).print()
 
         await this.model.fit(X, Y, {
-            epochs: 5,
+            epochs: 1,
             //batchSize,
             callbacks: {
                 // onBatchEnd: async (batch, logs) => {
